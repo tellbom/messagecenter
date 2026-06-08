@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "O8FoWqQ6zrpy0BAj9k+mRWd4hF+SXSLvDHytrlplyEg=",
+  "Source": "MessageCenter.Api",
+  "BasePath": "_content/MessageCenter.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}
