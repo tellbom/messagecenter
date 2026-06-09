@@ -10,16 +10,21 @@ public class TriggerResult
 public class NovuMessageItem
 {
     public string? Id { get; set; }
-    public NovuMessageContent? Content { get; set; }
+    public string? Subject { get; set; }
+    public string? Content { get; set; }
+    public NovuCta? Cta { get; set; }
     public bool Read { get; set; }
     public bool Seen { get; set; }
     public DateTime? CreatedAt { get; set; }
 }
 
-public class NovuMessageContent
+public class NovuCta
 {
-    public string? Title { get; set; }
-    public string? Body { get; set; }
+    public NovuCtaData? Data { get; set; }
+}
+
+public class NovuCtaData
+{
     public string? Url { get; set; }
 }
 

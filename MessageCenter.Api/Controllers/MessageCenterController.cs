@@ -78,4 +78,32 @@ public class MessageCenterController : ControllerBase
 
         return StatusCode(StatusCodes.Status201Created, response);
     }
+
+    [HttpGet("my")]
+    public async Task<IActionResult> GetMyMessages(
+        [FromQuery] int page = 0,
+        [FromQuery] int limit = 100,
+        CancellationToken ct = default)
+    {
+        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
+        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(subscriberId))
+        {
+            return Unauthorized(new { error = "X-User-Id header is required." });
+        }
+
+        var feed = await _novu.GetFeedAsync(page, limit, ct);
+        var messages = feed.Data.Select(message => new
+        {
+            messageId = message.Id,
+            title = message.Subject,
+            content = message.Content,
+            url = message.Cta?.Data?.Url,
+            read = message.Read,
+            seen = message.Seen,
+            createdAt = message.CreatedAt
+        }).ToList();
+
+        return Ok(messages);
+    }
 }
