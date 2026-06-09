@@ -122,4 +122,35 @@ public class MessageCenterController : ControllerBase
 
         return Ok(new { unreadCount });
     }
+
+    [HttpPost("messages/{messageId}/read")]
+    public async Task<IActionResult> MarkRead(string messageId, CancellationToken ct)
+        => await MarkAs(messageId, read: true, ct);
+
+    [HttpPost("messages/{messageId}/unread")]
+    public async Task<IActionResult> MarkUnread(string messageId, CancellationToken ct)
+        => await MarkAs(messageId, read: false, ct);
+
+    private async Task<IActionResult> MarkAs(string messageId, bool read, CancellationToken ct)
+    {
+        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
+        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(subscriberId))
+        {
+            return Unauthorized(new { error = "X-User-Id header is required." });
+        }
+
+        await _novu.MarkAsAsync(subscriberId, messageId, read, ct);
+
+        var feed = await _novu.GetFeedAsync(page: 0, limit: 100, ct);
+        var unreadCount = feed.Data.Count(message => !message.Read);
+        var updated = feed.Data.FirstOrDefault(message => message.Id == messageId);
+
+        return Ok(new
+        {
+            messageId,
+            read = updated?.Read ?? read,
+            unreadCount
+        });
+    }
 }

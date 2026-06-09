@@ -70,7 +70,7 @@ public class NovuClient
         var body = new
         {
             messageId,
-            mark = new { read }
+            markAs = read ? "read" : "unread"
         };
 
         var url = $"/v1/subscribers/{Uri.EscapeDataString(subscriberId)}/messages/mark-as";
