@@ -1,22 +1,22 @@
 # MessageCenter API
 
-ASP.NET Core 6 Web API. It wraps Novu as the source of truth for in-app messages and exposes a small business-facing message center API.
+ASP.NET Core 6 Web API。它以 Novu 作为应用内消息的权威数据源，并对外暴露一套简洁的、面向业务的消息中心 API。
 
-## Current Environment
+## 当前环境
 
-| Item | Value |
+| 项目 | 值 |
 |---|---|
 | .NET SDK | 6.x |
 | Novu Dashboard | `http://192.168.124.2:4000` |
 | Novu API | `http://192.168.124.2:13000` |
 | Novu WS | `http://192.168.124.2:13002` |
-| Novu workflow trigger | `system-notification` |
-| Novu channel | `in_app` |
-| Keycloak authority | `http://192.168.124.2:18085/realms/master` |
-| Test client | `cooper` |
-| Test user | `196045` |
+| Novu 工作流触发器 | `system-notification` |
+| Novu 通道 | `in_app` |
+| Keycloak 认证服务器 | `http://192.168.124.2:18085/realms/master` |
+| 测试客户端 | `cooper` |
+| 测试用户 | `196045` |
 
-The `system-notification` in-app template must use:
+`system-notification` 的 in-app 模板必须使用以下变量：
 
 ```text
 {{payload.title}}
@@ -24,9 +24,9 @@ The `system-notification` in-app template must use:
 {{payload.url}}
 ```
 
-## Configuration
+## 配置
 
-The current intranet config is committed in [appsettings.json](MessageCenter.Api/appsettings.json):
+当前内网配置已提交在 [appsettings.json](MessageCenter.Api/appsettings.json) 中：
 
 ```json
 {
@@ -44,7 +44,7 @@ The current intranet config is committed in [appsettings.json](MessageCenter.Api
 }
 ```
 
-Environment variables can still override config:
+仍可通过环境变量覆盖配置：
 
 ```powershell
 $env:Novu__ApiKey="13452c72c03e51f5da2433a989008e67"
@@ -52,31 +52,31 @@ $env:Jwt__Authority="http://192.168.124.2:18085/realms/master"
 $env:Jwt__RequireHttpsMetadata="false"
 ```
 
-## Run
+## 运行
 
 ```powershell
 dotnet build .\MessageCenter.Api\MessageCenter.Api.csproj
 dotnet run --project .\MessageCenter.Api\MessageCenter.Api.csproj --urls http://localhost:5000
 ```
 
-Health check:
+健康检查：
 
 ```bash
 curl http://localhost:5000/health
 # {"status":"ok"}
 ```
 
-## Authentication
+## 认证
 
-All `/api/message-center/*` endpoints require `Authorization: Bearer <token>`.
+所有 `/api/message-center/*` 接口都需要携带 `Authorization: Bearer <token>` 请求头。
 
-The API reads `preferred_username` from the Keycloak token:
+API 会从 Keycloak Token 中读取 `preferred_username` 字段：
 
-- Send path: `preferred_username` becomes `sourceSystem`.
-- Read path: `preferred_username` becomes Novu `subscriberId`.
-- The request body `sourceSystem` is optional and ignored if supplied.
+- 发送接口：`preferred_username` 作为 `sourceSystem` 使用。
+- 读取接口：`preferred_username` 作为 Novu 的 `subscriberId` 使用。
+- 请求体中的 `sourceSystem` 为可选字段，若传入则会被忽略。
 
-Get a test user token:
+获取测试用户 Token：
 
 ```bash
 TOKEN=$(curl -s -X POST \
@@ -89,9 +89,9 @@ TOKEN=$(curl -s -X POST \
   | jq -r .access_token)
 ```
 
-## Endpoints
+## 接口列表
 
-### Send Message
+### 发送消息
 
 `POST /api/message-center/send`
 
@@ -102,14 +102,14 @@ curl -X POST http://localhost:5000/api/message-center/send \
   -d '{
     "businessType": "process_task",
     "businessId": "TASK_001",
-    "title": "You have a new workflow task",
-    "content": "Please process the inspection approval workflow",
+    "title": "您有一条新的工作流任务",
+    "content": "请处理检验审批工作流",
     "url": "/process/tasks/TASK_001",
     "receivers": [{ "type": "user", "id": "196045" }]
   }'
 ```
 
-Response `201`:
+**响应 `201`**：
 
 ```json
 {
@@ -121,9 +121,9 @@ Response `201`:
 }
 ```
 
-Only `receivers[].type == "user"` is actionable in MVP. Other receiver types are skipped. If all receivers are skipped, the API returns `400`.
+MVP 阶段仅支持 `receivers[].type == "user"` 的接收者，其他类型会被跳过。若所有接收者都被跳过，API 将返回 `400` 错误。
 
-### My Messages
+### 我的消息
 
 `GET /api/message-center/my?page=0&limit=100`
 
@@ -132,14 +132,14 @@ curl "http://localhost:5000/api/message-center/my?page=0&limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Response `200`:
+**响应 `200`**：
 
 ```json
 [
   {
     "messageId": "6a27771843f156a3e5a9891f",
-    "title": "You have a new workflow task",
-    "content": "Please process the inspection approval workflow",
+    "title": "您有一条新的工作流任务",
+    "content": "请处理检验审批工作流",
     "url": "/process/tasks/TASK_001",
     "read": false,
     "seen": false,
@@ -148,7 +148,7 @@ Response `200`:
 ]
 ```
 
-### Unread Count
+### 未读数量
 
 `GET /api/message-center/unread-count`
 
@@ -157,7 +157,7 @@ curl http://localhost:5000/api/message-center/unread-count \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Response `200`:
+**响应 `200`**：
 
 ```json
 {
@@ -165,9 +165,9 @@ Response `200`:
 }
 ```
 
-The count is derived from `GET /v1/messages?page=0&limit=100&pageSize=100` by counting items where `read == false`.
+未读数量通过调用 Novu `GET /v1/messages?page=0&limit=100&pageSize=100` 接口，并统计 `read == false` 的条目得出。
 
-### Mark Read
+### 标记已读
 
 `POST /api/message-center/messages/{messageId}/read`
 
@@ -176,7 +176,7 @@ curl -X POST http://localhost:5000/api/message-center/messages/6a27771843f156a3e
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Response `200`:
+**响应 `200`**：
 
 ```json
 {
@@ -186,7 +186,7 @@ Response `200`:
 }
 ```
 
-### Mark Unread
+### 标记未读
 
 `POST /api/message-center/messages/{messageId}/unread`
 
@@ -195,7 +195,7 @@ curl -X POST http://localhost:5000/api/message-center/messages/6a27771843f156a3e
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Response `200`:
+**响应 `200`**：
 
 ```json
 {
@@ -205,16 +205,16 @@ Response `200`:
 }
 ```
 
-## Errors
+## 错误处理
 
-| Status | Meaning |
+| 状态码 | 含义 |
 |---|---|
-| `400` | Validation failed, or no actionable user receivers |
-| `401` | Missing/invalid JWT, or token lacks `preferred_username` |
-| `502` | Novu request failed; response contains `novuStatus` |
-| `504` | Novu request timed out |
+| `400` | 参数校验失败，或没有有效的用户接收者 |
+| `401` | JWT 缺失/无效，或 Token 中缺少 `preferred_username` |
+| `502` | Novu 请求失败，响应中包含 `novuStatus` |
+| `504` | Novu 请求超时 |
 
-Example:
+示例：
 
 ```json
 {
@@ -223,33 +223,32 @@ Example:
 }
 ```
 
-## Audit
+## 审计日志
 
-Each successful receiver trigger writes one structured audit log entry:
+每次成功触发接收者时，会写入一条结构化审计日志：
 
 ```text
 AUDIT send. TransactionId=txn_xxx SourceSystem=196045 BusinessType=process_task BusinessId=TASK_001 SubscriberId=196045 NovuHttpStatus=200 Status=processed Acknowledged=True Timestamp=...
 ```
 
-`IAuditSink` is the extension point. To persist audit records in a database, add `DbAuditSink : IAuditSink` and replace the DI registration in `Program.cs`.
+`IAuditSink` 是扩展点。若需将审计记录持久化到数据库，可实现 `DbAuditSink : IAuditSink`，并在 `Program.cs` 中替换依赖注入注册。
 
-## Used Novu Endpoints
+## 使用的 Novu 接口
 
-Only these Novu endpoints are used:
+本 API 仅使用以下 Novu 接口：
 
-| Method | Path | Purpose |
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| `POST` | `/v1/events/trigger` | Send notification |
-| `GET` | `/v1/messages?page=&limit=&pageSize=` | Query messages and derive unread count |
-| `POST` | `/v1/subscribers/{subscriberId}/messages/mark-as` | Mark read/unread |
+| `POST` | `/v1/events/trigger` | 发送通知 |
+| `GET` | `/v1/messages?page=&limit=&pageSize=` | 查询消息列表并计算未读数 |
+| `POST` | `/v1/subscribers/{subscriberId}/messages/mark-as` | 标记已读/未读 |
 
-Important notes:
+**重要说明**：
+- `GET /v1/messages` 返回的字段中，标题为 `subject`，内容为 `content`，跳转链接为 `cta.data.url`。
+- 标记已读/未读使用请求体 `{ "messageId": "...", "markAs": "read" }` 或 `{ "messageId": "...", "markAs": "unread" }`。
+- 基于 subscriber 的通知 feed / unseen 接口未经验证，本 API 未使用。
 
-- `GET /v1/messages` returns real Novu fields as `subject`, `content`, and `cta.data.url`.
-- Mark read/unread uses body `{ "messageId": "...", "markAs": "read" }` or `{ "messageId": "...", "markAs": "unread" }`.
-- The subscriber-scoped notification feed/unseen endpoints were not validated and are not used.
-
-## Project Structure
+## 项目结构
 
 ```text
 MessageCenter.Api/
@@ -276,7 +275,7 @@ MessageCenter.Api/
   Program.cs
 ```
 
-## MVP Smoke Test
+## MVP 冒烟测试
 
 ```bash
 BASE=http://localhost:5000
