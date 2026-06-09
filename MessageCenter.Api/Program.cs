@@ -1,3 +1,4 @@
+using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
 using MessageCenter.Api.Options;
 using System.Net.Http.Headers;
@@ -17,6 +18,7 @@ builder.Services.AddHttpClient<NovuClient>((sp, client) =>
     client.DefaultRequestHeaders.Authorization =
         new AuthenticationHeaderValue("ApiKey", novuOptions.ApiKey);
 });
+builder.Services.AddSingleton<IAuditSink, LoggerAuditSink>();
 
 var app = builder.Build();
 

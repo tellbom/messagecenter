@@ -1,3 +1,4 @@
+using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
 using MessageCenter.Api.Models;
 using MessageCenter.Api.Options;
@@ -13,16 +14,16 @@ public class MessageCenterController : ControllerBase
 {
     private readonly NovuClient _novu;
     private readonly NovuOptions _options;
-    private readonly ILogger<MessageCenterController> _logger;
+    private readonly IAuditSink _audit;
 
     public MessageCenterController(
         NovuClient novu,
         IOptions<NovuOptions> options,
-        ILogger<MessageCenterController> logger)
+        IAuditSink audit)
     {
         _novu = novu;
         _options = options.Value;
-        _logger = logger;
+        _audit = audit;
     }
 
     [HttpPost("send")]
@@ -59,12 +60,16 @@ public class MessageCenterController : ControllerBase
             status = result.Status;
             acknowledged = result.Acknowledged;
 
-            _logger.LogInformation(
-                "Novu trigger sent. TransactionId={TransactionId} SubscriberId={SubscriberId} Status={Status} Acknowledged={Acknowledged}",
+            _audit.Record(new AuditEntry(
                 result.TransactionId,
+                request.SourceSystem,
+                request.BusinessType,
+                request.BusinessId,
                 trigger.SubscriberId,
+                StatusCodes.Status200OK,
                 result.Status,
-                result.Acknowledged);
+                result.Acknowledged,
+                DateTime.UtcNow));
         }
 
         var response = new SendMessageResponse
