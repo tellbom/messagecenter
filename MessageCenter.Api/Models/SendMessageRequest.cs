@@ -4,8 +4,7 @@ namespace MessageCenter.Api.Models;
 
 public class SendMessageRequest
 {
-    [Required]
-    public string SourceSystem { get; set; } = string.Empty;
+    public string? SourceSystem { get; set; }
 
     [Required]
     public string BusinessType { get; set; } = string.Empty;

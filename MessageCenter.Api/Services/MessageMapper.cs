@@ -16,7 +16,7 @@ public static class MessageMapper
 
         var payload = new NovuPayloadFields
         {
-            SourceSystem = request.SourceSystem,
+            SourceSystem = request.SourceSystem ?? string.Empty,
             BusinessType = request.BusinessType,
             BusinessId = request.BusinessId,
             Title = request.Title,

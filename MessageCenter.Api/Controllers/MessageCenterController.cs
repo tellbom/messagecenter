@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
 using MessageCenter.Api.Models;
 using MessageCenter.Api.Options;
 using MessageCenter.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -10,6 +12,7 @@ namespace MessageCenter.Api.Controllers;
 
 [ApiController]
 [Route("api/message-center")]
+[Authorize]
 public class MessageCenterController : ControllerBase
 {
     private readonly NovuClient _novu;
@@ -31,6 +34,13 @@ public class MessageCenterController : ControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken ct)
     {
+        var sourceSystem = GetPreferredUsername();
+        if (sourceSystem is null)
+        {
+            return Unauthorized(new { error = "preferred_username claim is missing from token." });
+        }
+
+        request.SourceSystem = sourceSystem;
         var triggers = MessageMapper.Map(request, _options.DefaultWorkflowId, out var skipped);
 
         if (triggers.Count == 0)
@@ -62,7 +72,7 @@ public class MessageCenterController : ControllerBase
 
             _audit.Record(new AuditEntry(
                 result.TransactionId,
-                request.SourceSystem,
+                sourceSystem,
                 request.BusinessType,
                 request.BusinessId,
                 trigger.SubscriberId,
@@ -90,11 +100,10 @@ public class MessageCenterController : ControllerBase
         [FromQuery] int limit = 100,
         CancellationToken ct = default)
     {
-        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
-        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(subscriberId))
+        var subscriberId = GetPreferredUsername();
+        if (subscriberId is null)
         {
-            return Unauthorized(new { error = "X-User-Id header is required." });
+            return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
         var feed = await _novu.GetFeedAsync(page, limit, ct);
@@ -115,11 +124,10 @@ public class MessageCenterController : ControllerBase
     [HttpGet("unread-count")]
     public async Task<IActionResult> GetUnreadCount(CancellationToken ct)
     {
-        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
-        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(subscriberId))
+        var subscriberId = GetPreferredUsername();
+        if (subscriberId is null)
         {
-            return Unauthorized(new { error = "X-User-Id header is required." });
+            return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
         var feed = await _novu.GetFeedAsync(page: 0, limit: 100, ct);
@@ -138,11 +146,10 @@ public class MessageCenterController : ControllerBase
 
     private async Task<IActionResult> MarkAs(string messageId, bool read, CancellationToken ct)
     {
-        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
-        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(subscriberId))
+        var subscriberId = GetPreferredUsername();
+        if (subscriberId is null)
         {
-            return Unauthorized(new { error = "X-User-Id header is required." });
+            return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
         await _novu.MarkAsAsync(subscriberId, messageId, read, ct);
@@ -158,4 +165,7 @@ public class MessageCenterController : ControllerBase
             unreadCount
         });
     }
+
+    private string? GetPreferredUsername()
+        => User.FindFirstValue("preferred_username");
 }

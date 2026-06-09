@@ -2,8 +2,10 @@ using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
 using MessageCenter.Api.Middleware;
 using MessageCenter.Api.Options;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +23,24 @@ builder.Services.AddHttpClient<NovuClient>((sp, client) =>
 });
 // Polly extension point: add .AddPolicyHandler(...) to the NovuClient IHttpClientBuilder when retries are introduced.
 builder.Services.AddSingleton<IAuditSink, LoggerAuditSink>();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = builder.Configuration["Jwt:Authority"]
+            ?? throw new InvalidOperationException("Jwt:Authority is not configured.");
+        options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Jwt:RequireHttpsMetadata");
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            RequireSignedTokens = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -36,6 +56,8 @@ if (string.IsNullOrWhiteSpace(novu.ApiKey))
 }
 
 app.UseMiddleware<NovuExceptionMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
