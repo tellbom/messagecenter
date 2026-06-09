@@ -1,5 +1,6 @@
 using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
+using MessageCenter.Api.Middleware;
 using MessageCenter.Api.Options;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
@@ -18,6 +19,7 @@ builder.Services.AddHttpClient<NovuClient>((sp, client) =>
     client.DefaultRequestHeaders.Authorization =
         new AuthenticationHeaderValue("ApiKey", novuOptions.ApiKey);
 });
+// Polly extension point: add .AddPolicyHandler(...) to the NovuClient IHttpClientBuilder when retries are introduced.
 builder.Services.AddSingleton<IAuditSink, LoggerAuditSink>();
 
 var app = builder.Build();
@@ -32,6 +34,8 @@ if (string.IsNullOrWhiteSpace(novu.ApiKey))
 {
     throw new InvalidOperationException("Novu:ApiKey is required.");
 }
+
+app.UseMiddleware<NovuExceptionMiddleware>();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
