@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MessageCenter.Api.Audit;
 using MessageCenter.Api.HttpClients;
+using MessageCenter.Api.HttpClients.Dtos;
 using MessageCenter.Api.Models;
 using MessageCenter.Api.Options;
 using MessageCenter.Api.Services;
@@ -15,6 +16,8 @@ namespace MessageCenter.Api.Controllers;
 [Authorize]
 public class MessageCenterController : ControllerBase
 {
+    private const int FeedPageSize = 100;
+
     private readonly NovuClient _novu;
     private readonly NovuOptions _options;
     private readonly IAuditSink _audit;
@@ -130,8 +133,8 @@ public class MessageCenterController : ControllerBase
             return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
-        var feed = await _novu.GetFeedAsync(page: 0, limit: 100, ct);
-        var unreadCount = feed.Data.Count(message => !message.Read);
+        var messages = await GetAllFeedMessagesAsync(ct);
+        var unreadCount = messages.Count(message => !message.Read);
 
         return Ok(new { unreadCount });
     }
@@ -154,9 +157,9 @@ public class MessageCenterController : ControllerBase
 
         await _novu.MarkAsAsync(subscriberId, messageId, read, ct);
 
-        var feed = await _novu.GetFeedAsync(page: 0, limit: 100, ct);
-        var unreadCount = feed.Data.Count(message => !message.Read);
-        var updated = feed.Data.FirstOrDefault(message => message.Id == messageId);
+        var messages = await GetAllFeedMessagesAsync(ct);
+        var unreadCount = messages.Count(message => !message.Read);
+        var updated = messages.FirstOrDefault(message => message.Id == messageId);
 
         return Ok(new
         {
@@ -168,4 +171,23 @@ public class MessageCenterController : ControllerBase
 
     private string? GetPreferredUsername()
         => User.FindFirstValue("preferred_username");
+
+    private async Task<List<NovuMessageItem>> GetAllFeedMessagesAsync(CancellationToken ct)
+    {
+        var page = 0;
+        var messages = new List<NovuMessageItem>();
+
+        while (true)
+        {
+            var feed = await _novu.GetFeedAsync(page, FeedPageSize, ct);
+            messages.AddRange(feed.Data);
+
+            if (!feed.HasMore || feed.Data.Count == 0)
+            {
+                return messages;
+            }
+
+            page++;
+        }
+    }
 }

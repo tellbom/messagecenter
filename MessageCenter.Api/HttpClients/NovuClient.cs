@@ -55,6 +55,7 @@ public class NovuClient
         return new FeedResult
         {
             Data = envelope?.Data ?? new List<NovuMessageItem>(),
+            HasMore = envelope?.HasMore ?? false,
             TotalCount = envelope?.TotalCount ?? 0,
             PageSize = envelope?.PageSize ?? 0,
             Page = envelope?.Page ?? page
@@ -84,5 +85,6 @@ public class NovuClient
         public int TotalCount { get; set; }
         public int PageSize { get; set; }
         public int Page { get; set; }
+        public bool HasMore { get; set; }
     }
 }
