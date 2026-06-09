@@ -106,4 +106,20 @@ public class MessageCenterController : ControllerBase
 
         return Ok(messages);
     }
+
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount(CancellationToken ct)
+    {
+        // TODO: replace header resolution with JWT claim extraction when auth middleware is added.
+        var subscriberId = Request.Headers["X-User-Id"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(subscriberId))
+        {
+            return Unauthorized(new { error = "X-User-Id header is required." });
+        }
+
+        var feed = await _novu.GetFeedAsync(page: 0, limit: 100, ct);
+        var unreadCount = feed.Data.Count(message => !message.Read);
+
+        return Ok(new { unreadCount });
+    }
 }
