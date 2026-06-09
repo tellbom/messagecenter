@@ -12,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.Configure<NovuOptions>(
     builder.Configuration.GetSection(NovuOptions.Section));
+builder.Services.Configure<SourceSystemOptions>(options =>
+{
+    builder.Configuration.GetSection(SourceSystemOptions.Section).Bind(options.Names);
+});
 builder.Services.AddHttpClient<NovuClient>((sp, client) =>
 {
     var novuOptions = sp.GetRequiredService<IOptions<NovuOptions>>().Value;
@@ -53,6 +57,12 @@ if (string.IsNullOrWhiteSpace(novu.BaseUrl))
 if (string.IsNullOrWhiteSpace(novu.ApiKey))
 {
     throw new InvalidOperationException("Novu:ApiKey is required.");
+}
+
+var sourceSystemOptions = app.Services.GetRequiredService<IOptions<SourceSystemOptions>>().Value;
+if (sourceSystemOptions.Names.Count == 0)
+{
+    throw new InvalidOperationException("SourceSystemNames is empty. At least one client mapping is required.");
 }
 
 app.UseMiddleware<NovuExceptionMiddleware>();

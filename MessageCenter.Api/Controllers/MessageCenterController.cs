@@ -20,15 +20,18 @@ public class MessageCenterController : ControllerBase
 
     private readonly NovuClient _novu;
     private readonly NovuOptions _options;
+    private readonly SourceSystemOptions _sourceSystemOptions;
     private readonly IAuditSink _audit;
 
     public MessageCenterController(
         NovuClient novu,
         IOptions<NovuOptions> options,
+        IOptions<SourceSystemOptions> sourceSystemOptions,
         IAuditSink audit)
     {
         _novu = novu;
         _options = options.Value;
+        _sourceSystemOptions = sourceSystemOptions.Value;
         _audit = audit;
     }
 
@@ -37,10 +40,19 @@ public class MessageCenterController : ControllerBase
         [FromBody] SendMessageRequest request,
         CancellationToken ct)
     {
-        var sourceSystem = GetPreferredUsername();
-        if (sourceSystem is null)
+        var clientId = GetPreferredUsername();
+        if (clientId is null)
         {
             return Unauthorized(new { error = "preferred_username claim is missing from token." });
+        }
+
+        if (!_sourceSystemOptions.Names.TryGetValue(clientId, out var sourceSystem))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                error = $"Client '{clientId}' is not registered in SourceSystemNames. Contact the platform team to register this client before sending messages.",
+                clientId
+            });
         }
 
         request.SourceSystem = sourceSystem;

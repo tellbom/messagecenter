@@ -165,7 +165,7 @@ curl http://localhost:5000/api/message-center/unread-count \
 }
 ```
 
-未读数量通过调用 Novu `GET /v1/messages?page=0&limit=100&pageSize=100` 接口，并统计 `read == false` 的条目得出。
+未读数量通过分页调用 Novu `GET /v1/messages?page=&limit=100&pageSize=100` 得出：每页查询 100 条，并根据 Novu 返回的 `hasMore` 自动翻页，直到没有更多数据后统计 `read == false` 的条目。标记已读/未读后的 `unreadCount` 回查也使用同一套全量分页统计逻辑。
 
 ### 标记已读
 
