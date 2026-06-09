@@ -1,33 +1,33 @@
 # MessageCenter API
 
-A lightweight ASP.NET Core 6 wrapper around [Novu](https://novu.co) that provides a business-facing contract for sending and reading in-app notifications.
+一个轻量级的 ASP.NET Core 6 封装库，基于 [Novu](https://novu.co) 提供面向业务方的应用内通知发送和读取接口。
 
 ---
 
-## Prerequisites
+## 前置要求
 
-| Requirement | Value |
+| 要求 | 值 |
 |---|---|
 | .NET SDK | 6.0 |
-| Novu instance | `http://192.168.124.2:13000` |
-| Novu workflow | `system-notification` (active, in-app step configured) |
-| Novu API key | obtain from Novu dashboard → API Keys |
+| Novu 服务地址 | `http://192.168.124.2:13000` |
+| Novu 工作流 | `system-notification`（已激活，且配置了 in-app 步骤） |
+| Novu API Key | 从 Novu 控制台 → API Keys 获取 |
 
-### Novu workflow template prerequisite
+### Novu 工作流模板前置条件
 
-The `system-notification` workflow's in-app step **must** reference these payload variables:
+`system-notification` 工作流的 **in-app 步骤** 必须引用以下 payload 变量：
 
 ```
-{{payload.title}}    — message title
-{{payload.content}}  — message body
-{{payload.url}}      — redirect URL (CTA)
+{{payload.title}}    — 消息标题
+{{payload.content}}  — 消息正文
+{{payload.url}}      — 跳转链接（CTA）
 ```
 
-This was configured during the POC and is a hard precondition. The API will not error if these are missing from the template, but notifications will render without content.
+此配置已在 POC 阶段完成，是硬性前提。即使模板中缺少这些变量，API 也不会报错，但通知将无法正常展示内容。
 
 ---
 
-## Configuration
+## 配置
 
 ### `appsettings.json`
 
@@ -43,7 +43,7 @@ This was configured during the POC and is a hard precondition. The API will not 
 }
 ```
 
-`ApiKey` must **not** be committed to source control. Supply it via environment variable:
+`ApiKey` **禁止** 提交到源码仓库。请通过环境变量提供：
 
 ```bash
 # Linux / macOS
@@ -53,18 +53,18 @@ export Novu__ApiKey=your_api_key_here
 $env:Novu__ApiKey = "your_api_key_here"
 ```
 
-The application will throw `InvalidOperationException` on startup if `ApiKey` or `BaseUrl` is missing or empty.
+启动时若 `ApiKey` 或 `BaseUrl` 为空或缺失，应用会抛出 `InvalidOperationException`。
 
 ---
 
-## Running the API
+## 运行 API
 
 ```bash
 cd MessageCenter.Api
 Novu__ApiKey=your_api_key_here dotnet run
 ```
 
-Verify the service is up:
+验证服务是否启动：
 
 ```bash
 curl http://localhost:5000/health
@@ -73,21 +73,21 @@ curl http://localhost:5000/health
 
 ---
 
-## Endpoints
+## 接口列表
 
-All read-path endpoints require the `X-User-Id` header carrying the Novu `subscriberId` of the authenticated user. This header is expected to be injected by the API gateway.
+所有读取类接口均需要携带 `X-User-Id` 请求头，值为对应用户的 Novu `subscriberId`（由 API 网关注入）。
 
-> **TODO:** Replace `X-User-Id` header resolution with JWT claim extraction once auth middleware is added.
+> **TODO**：后续添加认证中间件后，将替换为从 JWT Claim 中提取。
 
 ---
 
-### 1. Send a message
+### 1. 发送消息
 
 `POST /api/message-center/send`
 
-Triggers a Novu `system-notification` for each user receiver. Intended for backend services only.
+为每个接收用户触发 Novu `system-notification` 工作流。主要供后端服务调用。
 
-**Request**
+**请求示例**
 
 ```bash
 curl -X POST http://localhost:5000/api/message-center/send \
@@ -96,8 +96,8 @@ curl -X POST http://localhost:5000/api/message-center/send \
     "sourceSystem": "workflow-center",
     "businessType": "process_task",
     "businessId":   "TASK_001",
-    "title":        "You have a new workflow task",
-    "content":      "Please process the inspection approval workflow",
+    "title":        "您有一条新的工作流任务",
+    "content":      "请处理检验审批工作流",
     "url":          "/process/tasks/TASK_001",
     "receivers": [
       { "type": "user", "id": "EMP001" }
@@ -105,7 +105,7 @@ curl -X POST http://localhost:5000/api/message-center/send \
   }'
 ```
 
-**Response `201`**
+**响应 `201`**
 
 ```json
 {
@@ -117,39 +117,39 @@ curl -X POST http://localhost:5000/api/message-center/send \
 }
 ```
 
-**Notes**
+**说明**
 
-- Only `receivers[].type == "user"` is supported in MVP. Other types are skipped and reported in `skipped`.
-- Novu upserts the subscriber on trigger; receivers need not be pre-provisioned.
-- Required fields: `sourceSystem`, `businessType`, `title`, `receivers` (non-empty). Missing fields return `400`.
+- 当前 MVP 阶段仅支持 `receivers[].type == "user"`，其他类型将被跳过并记录在 `skipped` 中。
+- Novu 会自动 upsert subscriber，接收者无需提前创建。
+- 必填字段：`sourceSystem`、`businessType`、`title`、`receivers`（不能为空）。
 
 ---
 
-### 2. Get my messages
+### 2. 获取我的消息
 
 `GET /api/message-center/my`
 
-Returns the authenticated user's notification feed.
+返回当前认证用户的通知列表。
 
-**Request**
+**请求示例**
 
 ```bash
 curl http://localhost:5000/api/message-center/my \
   -H "X-User-Id: EMP001"
 
-# With pagination (defaults: page=0, limit=100)
+# 分页（默认 page=0, limit=100）
 curl "http://localhost:5000/api/message-center/my?page=0&limit=10" \
   -H "X-User-Id: EMP001"
 ```
 
-**Response `200`**
+**响应 `200`**
 
 ```json
 [
   {
     "messageId": "6a27771843f156a3e5a9891f",
-    "title":     "You have a new workflow task",
-    "content":   "Please process the inspection approval workflow",
+    "title":     "您有一条新的工作流任务",
+    "content":   "请处理检验审批工作流",
     "url":       "/process/tasks/TASK_001",
     "read":      false,
     "seen":      false,
@@ -160,20 +160,13 @@ curl "http://localhost:5000/api/message-center/my?page=0&limit=10" \
 
 ---
 
-### 3. Get unread count
+### 3. 获取未读数量
 
 `GET /api/message-center/unread-count`
 
-Returns the number of unread messages for the authenticated user.
+返回当前用户的未读消息数。
 
-**Request**
-
-```bash
-curl http://localhost:5000/api/message-center/unread-count \
-  -H "X-User-Id: EMP001"
-```
-
-**Response `200`**
+**响应 `200`**
 
 ```json
 {
@@ -183,19 +176,11 @@ curl http://localhost:5000/api/message-center/unread-count \
 
 ---
 
-### 4. Mark a message as read
+### 4. 标记消息为已读
 
 `POST /api/message-center/messages/{messageId}/read`
 
-**Request**
-
-```bash
-curl -X POST \
-  http://localhost:5000/api/message-center/messages/6a27771843f156a3e5a9891f/read \
-  -H "X-User-Id: EMP001"
-```
-
-**Response `200`**
+**响应 `200`**
 
 ```json
 {
@@ -207,19 +192,11 @@ curl -X POST \
 
 ---
 
-### 5. Mark a message as unread
+### 5. 标记消息为未读
 
 `POST /api/message-center/messages/{messageId}/unread`
 
-**Request**
-
-```bash
-curl -X POST \
-  http://localhost:5000/api/message-center/messages/6a27771843f156a3e5a9891f/unread \
-  -H "X-User-Id: EMP001"
-```
-
-**Response `200`**
+**响应 `200`**
 
 ```json
 {
@@ -231,105 +208,75 @@ curl -X POST \
 
 ---
 
-## Error responses
+## 错误响应
 
-| Status | Cause |
+| 状态码 | 原因 |
 |---|---|
-| `400` | Validation failure (missing required fields, empty receivers) |
-| `401` | `X-User-Id` header missing on read-path endpoints |
-| `502` | Novu returned a non-2xx response |
-| `504` | Novu request exceeded `TimeoutSeconds` |
-
-**502 example**
-
-```json
-{
-  "error": "Novu request failed.",
-  "novuStatus": 404
-}
-```
-
-**504 example**
-
-```json
-{
-  "error": "Novu request timed out."
-}
-```
+| `400` | 参数校验失败（必填字段缺失、receivers 为空等） |
+| `401` | 读取类接口缺少 `X-User-Id` 请求头 |
+| `502` | Novu 返回非 2xx 响应 |
+| `504` | Novu 请求超时 |
 
 ---
 
-## Validated Novu endpoints
+## 已验证的 Novu 接口
 
-The following Novu API paths were verified during the POC and are the only ones used:
+本 API 仅使用以下经过 POC 验证的 Novu 接口：
 
-| Method | Path | Used for |
+| 方法 | 路径 | 用途 |
 |---|---|---|
-| `POST` | `/v1/events/trigger` | Send notification |
-| `GET` | `/v1/messages?page=&limit=&pageSize=` | Fetch feed / derive unread count |
-| `POST` | `/v1/subscribers/{subscriberId}/messages/mark-as` | Mark read / unread |
-
-> **Not used:** `/v1/subscribers/{id}/notifications/feed` and `/v1/subscribers/{id}/notifications/unseen` were **not** validated in the POC and are not called by this API.
+| `POST` | `/v1/events/trigger` | 发送通知 |
+| `GET` | `/v1/messages?page=&limit=&pageSize=` | 获取消息列表 / 计算未读数 |
+| `POST` | `/v1/subscribers/{subscriberId}/messages/mark-as` | 标记已读/未读 |
 
 ---
 
-## Project structure
+## 项目结构
 
 ```
 MessageCenter.Api/
 ├── Audit/
-│   ├── IAuditSink.cs              # Audit abstraction
-│   └── LoggerAuditSink.cs         # Default: structured log; DB extension point inside
+│   ├── IAuditSink.cs
+│   └── LoggerAuditSink.cs
 ├── Controllers/
-│   └── MessageCenterController.cs # All five business endpoints
+│   └── MessageCenterController.cs
 ├── HttpClients/
-│   ├── NovuClient.cs              # Typed HTTP client
+│   ├── NovuClient.cs
 │   └── Dtos/
-│       └── NovuDtos.cs            # Novu response shapes
+│       └── NovuDtos.cs
 ├── Middleware/
-│   └── NovuExceptionMiddleware.cs # 502 / 504 mapping
+│   └── NovuExceptionMiddleware.cs
 ├── Models/
-│   ├── MessageDto.cs              # Feed item DTO
-│   ├── SendMessageRequest.cs      # Send request + Receiver
-│   └── SendMessageResponse.cs     # Send response
+│   ├── MessageDto.cs
+│   ├── SendMessageRequest.cs
+│   └── SendMessageResponse.cs
 ├── Options/
-│   └── NovuOptions.cs             # Typed config
+│   └── NovuOptions.cs
 ├── Services/
-│   ├── MessageMapper.cs           # Request → Novu trigger payload mapping
-│   └── NovuTriggerPayload.cs      # Mapping result type
+│   ├── MessageMapper.cs
+│   └── NovuTriggerPayload.cs
 ├── appsettings.json
 └── Program.cs
 ```
 
 ---
 
-## End-to-end test checkpoint
+## 端到端测试检查点
 
 ```bash
 SUBSCRIBER="EMP001"
 BASE="http://localhost:5000"
 
-# 1. Send 5 messages
+# 1. 发送 5 条测试消息
 for i in 1 2 3 4 5; do
   curl -s -X POST $BASE/api/message-center/send \
     -H "Content-Type: application/json" \
-    -d "{\"sourceSystem\":\"test\",\"businessType\":\"test\",\"title\":\"Msg $i\",\"receivers\":[{\"type\":\"user\",\"id\":\"$SUBSCRIBER\"}]}"
+    -d "{\"sourceSystem\":\"test\",\"businessType\":\"test\",\"title\":\"测试消息 $i\",\"receivers\":[{\"type\":\"user\",\"id\":\"$SUBSCRIBER\"}]}"
 done
 
-# 2. Get feed — note a messageId from the response
+# 2. 获取消息列表（记录 messageId）
 curl -s "$BASE/api/message-center/my" -H "X-User-Id: $SUBSCRIBER"
 
-# 3. Check initial unread count (expect ≥ 5)
+# 3. 检查未读数（应 ≥ 5）
 curl -s "$BASE/api/message-center/unread-count" -H "X-User-Id: $SUBSCRIBER"
-
-# 4. Mark one message as read (replace with a real messageId)
-MESSAGE_ID="<messageId from step 2>"
-curl -s -X POST "$BASE/api/message-center/messages/$MESSAGE_ID/read" \
-  -H "X-User-Id: $SUBSCRIBER"
-# Expect: read=true, unreadCount decreased by 1
-
-# 5. Mark it back as unread
-curl -s -X POST "$BASE/api/message-center/messages/$MESSAGE_ID/unread" \
-  -H "X-User-Id: $SUBSCRIBER"
-# Expect: read=false, unreadCount restored
 ```
