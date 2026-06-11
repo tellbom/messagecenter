@@ -42,9 +42,15 @@ public class NovuClient
     public async Task<FeedResult> GetFeedAsync(
         int page,
         int limit,
+        string? subscriberId = null,
         CancellationToken ct = default)
     {
         var url = $"/v1/messages?page={page}&limit={limit}&pageSize={limit}";
+        if (!string.IsNullOrWhiteSpace(subscriberId))
+        {
+            url += $"&subscriberId={Uri.EscapeDataString(subscriberId)}";
+        }
+
         var response = await _http.GetAsync(url, ct);
         response.EnsureSuccessStatusCode();
 

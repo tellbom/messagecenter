@@ -121,7 +121,7 @@ public class MessageCenterController : ControllerBase
             return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
-        var feed = await _novu.GetFeedAsync(page, limit, ct);
+        var feed = await _novu.GetFeedAsync(page, limit, subscriberId, ct);
         var messages = feed.Data.Select(message => new
         {
             messageId = message.Id,
@@ -145,7 +145,7 @@ public class MessageCenterController : ControllerBase
             return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
-        var messages = await GetAllFeedMessagesAsync(ct);
+        var messages = await GetAllFeedMessagesAsync(subscriberId, ct);
         var unreadCount = messages.Count(message => !message.Read);
 
         return Ok(new { unreadCount });
@@ -169,7 +169,7 @@ public class MessageCenterController : ControllerBase
 
         await _novu.MarkAsAsync(subscriberId, messageId, read, ct);
 
-        var messages = await GetAllFeedMessagesAsync(ct);
+        var messages = await GetAllFeedMessagesAsync(subscriberId, ct);
         var unreadCount = messages.Count(message => !message.Read);
         var updated = messages.FirstOrDefault(message => message.Id == messageId);
 
@@ -184,14 +184,14 @@ public class MessageCenterController : ControllerBase
     private string? GetPreferredUsername()
         => User.FindFirstValue("preferred_username");
 
-    private async Task<List<NovuMessageItem>> GetAllFeedMessagesAsync(CancellationToken ct)
+    private async Task<List<NovuMessageItem>> GetAllFeedMessagesAsync(string subscriberId, CancellationToken ct)
     {
         var page = 0;
         var messages = new List<NovuMessageItem>();
 
         while (true)
         {
-            var feed = await _novu.GetFeedAsync(page, FeedPageSize, ct);
+            var feed = await _novu.GetFeedAsync(page, FeedPageSize, subscriberId, ct);
             messages.AddRange(feed.Data);
 
             if (!feed.HasMore || feed.Data.Count == 0)
