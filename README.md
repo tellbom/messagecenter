@@ -76,7 +76,34 @@ API 会从 Keycloak Token 中读取 `preferred_username` 字段：
 - 读取接口：`preferred_username` 作为 Novu 的 `subscriberId` 使用。
 - 请求体中的 `sourceSystem` 为可选字段，若传入则会被忽略。
 
-获取测试用户 Token：
+### Keycloak 获取 JWT 完整链路
+
+Token 地址：
+
+```text
+POST http://192.168.124.2:18085/realms/master/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+```
+
+cooper 客户端参数：
+
+```text
+client_id=cooper
+client_secret=oEllGz2IOsrMY07YnY1hZo6RzrFBZnjD
+```
+
+获取 cooper 服务账号 JWT。该 Token 的 `preferred_username` 为 `service-account-cooper`，用于调用发送接口；服务账号已在 `SourceSystemNames` 中映射为 `协同工作平台`：
+
+```bash
+TOKEN=$(curl -s -X POST \
+  http://192.168.124.2:18085/realms/master/protocol/openid-connect/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=cooper" \
+  -d "client_secret=oEllGz2IOsrMY07YnY1hZo6RzrFBZnjD" \
+  | jq -r .access_token)
+```
+
+获取测试用户 JWT。该 Token 的 `preferred_username` 为 `196045`，用于查询自己的消息、未读数、标记已读/未读：
 
 ```bash
 TOKEN=$(curl -s -X POST \
@@ -87,6 +114,12 @@ TOKEN=$(curl -s -X POST \
   -d "username=196045" \
   -d "password=cacjszx.132" \
   | jq -r .access_token)
+```
+
+调用 MessageCenter API 时统一放入请求头：
+
+```bash
+-H "Authorization: Bearer $TOKEN"
 ```
 
 ## 接口列表
