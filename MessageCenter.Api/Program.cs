@@ -37,10 +37,11 @@ builder.Services
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false,
+            ValidateIssuer = true,
             ValidateAudience = false,
-            ValidateLifetime = false,
-            RequireSignedTokens = false,
+            ValidateLifetime = true,
+            RequireSignedTokens = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
         };
     });
 builder.Services.AddAuthorization();

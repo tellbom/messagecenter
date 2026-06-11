@@ -42,7 +42,7 @@ Ordered, directly executable. Stack assumption: **ASP.NET Core (.NET 6)** Web AP
 - **Done when:** sending to a real subscriber returns `201`-equivalent success and the message appears in that subscriber's Novu feed.
 
 ## T7 — `GET /api/message-center/my`
-- Params: `page` (default 0), `limit` (default 100). `subscriberId` is resolved from the authenticated user context — it is not a client-supplied parameter.
+- Params: `page` (default 1), `limit` (default 100). `subscriberId` is resolved from the authenticated user context — it is not a client-supplied parameter. Convert `page` to Novu's zero-based page index internally.
 - Call `NovuClient.GetFeedAsync`; project Novu items to a slim DTO: `{ messageId, title, content, url, read, seen, createdAt }`.
 - **Done when:** a subscriber with 5 messages returns 5 items with correct `read` flags; 1 read + 4 unread reflects exactly as validated in the POC.
 

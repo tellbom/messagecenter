@@ -111,17 +111,28 @@ public class MessageCenterController : ControllerBase
 
     [HttpGet("my")]
     public async Task<IActionResult> GetMyMessages(
-        [FromQuery] int page = 0,
+        [FromQuery] int page = 1,
         [FromQuery] int limit = 100,
         CancellationToken ct = default)
     {
+        if (page < 1)
+        {
+            return BadRequest(new { error = "page must be greater than or equal to 1." });
+        }
+
+        if (limit < 1)
+        {
+            return BadRequest(new { error = "limit must be greater than or equal to 1." });
+        }
+
         var subscriberId = GetPreferredUsername();
         if (subscriberId is null)
         {
             return Unauthorized(new { error = "preferred_username claim is missing from token." });
         }
 
-        var feed = await _novu.GetFeedAsync(page, limit, subscriberId, ct);
+        var novuPage = page - 1;
+        var feed = await _novu.GetFeedAsync(novuPage, limit, subscriberId, ct);
         var messages = feed.Data.Select(message => new
         {
             messageId = message.Id,
