@@ -136,6 +136,9 @@ public class MessageCenterController : ControllerBase
         var messages = feed.Data.Select(message => new
         {
             messageId = message.Id,
+            sourceSystem = message.Payload?.SourceSystem,
+            businessType = message.Payload?.BusinessType,
+            businessId = message.Payload?.BusinessId,
             title = message.Subject,
             content = message.Content,
             url = message.Cta?.Data?.Url,

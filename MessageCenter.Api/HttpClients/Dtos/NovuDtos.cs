@@ -12,10 +12,18 @@ public class NovuMessageItem
     public string? Id { get; set; }
     public string? Subject { get; set; }
     public string? Content { get; set; }
+    public NovuMessagePayload? Payload { get; set; }
     public NovuCta? Cta { get; set; }
     public bool Read { get; set; }
     public bool Seen { get; set; }
     public DateTime? CreatedAt { get; set; }
+}
+
+public class NovuMessagePayload
+{
+    public string? SourceSystem { get; set; }
+    public string? BusinessType { get; set; }
+    public string? BusinessId { get; set; }
 }
 
 public class NovuCta

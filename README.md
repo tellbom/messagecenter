@@ -140,6 +140,9 @@ curl "http://localhost:5000/api/message-center/my?page=1&limit=10" \
 [
   {
     "messageId": "6a27771843f156a3e5a9891f",
+    "sourceSystem": "协同工作平台",
+    "businessType": "process_task",
+    "businessId": "TASK_001",
     "title": "您有一条新的工作流任务",
     "content": "请处理检验审批工作流",
     "url": "/process/tasks/TASK_001",
