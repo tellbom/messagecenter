@@ -6,7 +6,7 @@
 
 本文中的 `docker run` 命令已整理为项目根目录下的脚本：
 
-- `novu.env`: Novu 启动配置，IP、宿主机端口、容器端口、MongoDB 存储目录和密钥都在这里。
+- `novu.env`: Novu 启动配置，IP、宿主机外部端口、MongoDB 存储目录、外部依赖地址和密钥都在这里。
 - `start-novu.sh`: 按 Redis、MongoDB、API、Worker、WS、Dashboard 的依赖顺序启动，并等待健康检查。
 - `restart-novu.sh`: 按依赖顺序重启已有容器，并等待健康检查。
 - `novu-lib.sh`: 公共校验和健康等待逻辑。
@@ -16,7 +16,7 @@
 ```bash
 chmod +x start-novu.sh restart-novu.sh novu-lib.sh
 
-# 修改 novu.env 中的 NOVU_PUBLIC_IP、NOVU_BIND_IP、端口和 NOVU_MONGO_DATA_DIR 后执行
+# 修改 novu.env 中的 NOVU_PUBLIC_IP、NOVU_BIND_IP、宿主机外部端口和 NOVU_MONGO_DATA_DIR 后执行
 ./start-novu.sh
 
 # 对已有容器按依赖顺序重启

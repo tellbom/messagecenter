@@ -5,6 +5,14 @@ fail() {
   exit 1
 }
 
+readonly NOVU_API_CONTAINER_PORT=3000
+readonly NOVU_WORKER_CONTAINER_PORT=3004
+readonly NOVU_WS_CONTAINER_PORT=3002
+readonly NOVU_DASHBOARD_CONTAINER_PORT=4000
+readonly NOVU_REDIS_CONTAINER_PORT=6379
+readonly NOVU_REDIS_CACHE_SERVICE_PORT=6379
+readonly NOVU_MONGODB_CONTAINER_PORT=27017
+
 info() {
   echo "==> $*"
 }
@@ -70,6 +78,11 @@ validate_abs_dir_var() {
   [[ "${value}" != "/" ]] || fail "${name} must not be /"
 }
 
+validate_http_url() {
+  local name="$1" value="${!1}"
+  [[ "${value}" =~ ^https?://[^[:space:]/:]+(:[0-9]+)?(/.*)?$ ]] || fail "${name} must be an http(s) URL: ${value}"
+}
+
 validate_unique_host_ports() {
   local ports=("$NOVU_API_HOST_PORT" "$NOVU_WS_HOST_PORT" "$NOVU_DASHBOARD_HOST_PORT")
   local sorted unique_count
@@ -112,6 +125,7 @@ validate_required_env() {
     NOVU_S3_REGION
     NOVU_AWS_ACCESS_KEY_ID
     NOVU_AWS_SECRET_ACCESS_KEY
+    NOVU_S3_LOCAL_STACK_URL
     NOVU_JWT_SECRET
     NOVU_STORE_ENCRYPTION_KEY
     NOVU_SECRET_KEY
@@ -142,17 +156,9 @@ validate_required_env() {
 
   local port_vars=(
     NOVU_API_HOST_PORT
-    NOVU_API_CONTAINER_PORT
-    NOVU_WORKER_CONTAINER_PORT
     NOVU_WS_HOST_PORT
-    NOVU_WS_CONTAINER_PORT
     NOVU_DASHBOARD_HOST_PORT
-    NOVU_DASHBOARD_CONTAINER_PORT
     NOVU_DASHBOARD_ALT_HOST_PORT
-    NOVU_REDIS_CONTAINER_PORT
-    NOVU_REDIS_CACHE_SERVICE_PORT
-    NOVU_MONGODB_CONTAINER_PORT
-    NOVU_S3_LOCAL_STACK_PORT
   )
 
   local docker_name_vars=(
@@ -197,6 +203,7 @@ validate_required_env() {
   validate_ipv4 NOVU_PUBLIC_IP
   validate_ipv4 NOVU_BIND_IP
   validate_abs_dir_var NOVU_MONGO_DATA_DIR
+  validate_http_url NOVU_S3_LOCAL_STACK_URL
   validate_unique_host_ports
   validate_store_encryption_key
   validate_port NOVU_HEALTH_TIMEOUT_SECONDS
@@ -225,7 +232,7 @@ dashboard_public_url() {
 }
 
 s3_local_stack_url() {
-  printf 'http://%s:%s' "${NOVU_PUBLIC_IP}" "${NOVU_S3_LOCAL_STACK_PORT}"
+  printf '%s' "${NOVU_S3_LOCAL_STACK_URL}"
 }
 
 api_internal_url() {
