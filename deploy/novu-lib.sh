@@ -247,7 +247,7 @@ ensure_port_available() {
   local port="$1"
 
   if command -v ss >/dev/null 2>&1; then
-    if ss -lnt | awk -v port=":${port}" 'NR > 1 && index($4, port) == length($4) - length(port) + 1 { found=1 } END { exit found ? 0 : 1 }'; then
+    if ss -lnt | awk -v port=":${port}" 'NR > 1 { pos=index($4, port); if (pos > 0 && pos == length($4) - length(port) + 1) found=1 } END { exit found ? 0 : 1 }'; then
       fail "host port is already listening: ${port}"
     fi
     return
