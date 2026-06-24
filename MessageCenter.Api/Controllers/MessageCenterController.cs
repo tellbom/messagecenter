@@ -196,7 +196,10 @@ public class MessageCenterController : ControllerBase
     }
 
     private string? GetPreferredUsername()
-        => User.FindFirstValue("preferred_username");
+    {
+        var username = User.FindFirstValue("preferred_username");
+        return string.IsNullOrWhiteSpace(username) ? null : username;
+    }
 
     private async Task<List<NovuMessageItem>> GetAllFeedMessagesAsync(string subscriberId, CancellationToken ct)
     {

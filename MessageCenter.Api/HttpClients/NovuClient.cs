@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -52,6 +53,15 @@ public class NovuClient
         }
 
         var response = await _http.GetAsync(url, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new FeedResult
+            {
+                Page = page,
+                PageSize = limit
+            };
+        }
+
         response.EnsureSuccessStatusCode();
 
         var envelope = await response.Content.ReadFromJsonAsync<NovuEnvelope<List<NovuMessageItem>>>(
