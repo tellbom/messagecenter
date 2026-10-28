@@ -6,6 +6,7 @@ using MessageCenter.Api.Outbox;
 using MessageCenter.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace MessageCenter.Api.Controllers;
@@ -18,10 +19,14 @@ public sealed class MessageCenterController : ControllerBase
     private static readonly HashSet<string> MessageViews =
         new(StringComparer.OrdinalIgnoreCase) { "all", "unread", "read" };
 
+    private static readonly HashSet<string> LifecycleActions =
+        new(StringComparer.Ordinal) { "CONSUME", "REVOKE", "EXPIRE" };
+
     private readonly NovuClient _novu;
     private readonly NovuOptions _options;
     private readonly SourceSystemOptions _sourceSystemOptions;
     private readonly MessageOutboxStore _outbox;
+    private readonly MessageLifecycleStore _lifecycle;
     private readonly MessageProjectionStore _projection;
     private readonly MessageWorkQueue _jobs;
 
@@ -30,6 +35,7 @@ public sealed class MessageCenterController : ControllerBase
         IOptions<NovuOptions> options,
         IOptions<SourceSystemOptions> sourceSystemOptions,
         MessageOutboxStore outbox,
+        MessageLifecycleStore lifecycle,
         MessageProjectionStore projection,
         MessageWorkQueue jobs)
     {
@@ -37,6 +43,7 @@ public sealed class MessageCenterController : ControllerBase
         _options = options.Value;
         _sourceSystemOptions = sourceSystemOptions.Value;
         _outbox = outbox;
+        _lifecycle = lifecycle;
         _projection = projection;
         _jobs = jobs;
     }
@@ -88,12 +95,16 @@ public sealed class MessageCenterController : ControllerBase
     [HttpGet("send/{requestId}")]
     public async Task<IActionResult> GetSendStatus(
         string requestId,
-        CancellationToken ct)
+        [FromQuery] string? include = null,
+        CancellationToken ct = default)
     {
         var sourceSystem = GetSourceSystem();
         if (sourceSystem.Result is not null) return sourceSystem.Result;
 
-        var response = await _outbox.GetRequestAsync(sourceSystem.Name!, requestId, ct);
+        // include=terminal：收件人条目附带业务状态（businessState/businessVersion/terminalAt/terminalReason）。
+        var includeTerminal = string.Equals(include, "terminal", StringComparison.OrdinalIgnoreCase);
+        var response = await _outbox.GetRequestAsync(
+            sourceSystem.Name!, requestId, ct, includeTerminal);
         return response is null ? NotFound() : Ok(response);
     }
 
@@ -110,6 +121,187 @@ public sealed class MessageCenterController : ControllerBase
 
         var response = await _outbox.GetRequestAsync(sourceSystem.Name!, requestId, ct);
         return Accepted(response);
+    }
+
+    /// <summary>严格来源 uncertain 触发的人工对账：原来源令牌方可操作本来源原键。
+    /// CONFIRM_SENT 终结为已受理继续可见性投影；CONFIRM_NOT_SENT 以原 transactionId 恢复单次重发。</summary>
+    [HttpPost("send/{requestId}/resolve-trigger")]
+    public async Task<IActionResult> ResolveTrigger(
+        string requestId,
+        [FromBody] ResolveTriggerRequest body,
+        CancellationToken ct)
+    {
+        var sourceSystem = GetSourceSystem();
+        if (sourceSystem.Result is not null) return sourceSystem.Result;
+
+        if (string.IsNullOrWhiteSpace(body?.SendId)
+            || (body.Resolution != "CONFIRM_SENT" && body.Resolution != "CONFIRM_NOT_SENT"))
+        {
+            return BadRequest(new
+            {
+                error = "sendId is required and resolution must be CONFIRM_SENT or CONFIRM_NOT_SENT."
+            });
+        }
+
+        try
+        {
+            await _outbox.ResolveTriggerUncertainAsync(
+                sourceSystem.Name!, requestId, body.SendId, body.Resolution, ct);
+        }
+        catch (MessageOutboxConflictException)
+        {
+            return NotFound(new
+            {
+                error = "No recipient was found for this request and sendId under this source."
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { code = "MESSAGE_CONCURRENT_UPDATE", error = "State changed; retry reconciliation with the original request." });
+        }
+
+        var response = await _outbox.GetRequestAsync(sourceSystem.Name!, requestId, ct);
+        return Ok(response);
+    }
+
+    /// <summary>T-INT-05 生命周期操作（T-INT-01 §6）：CONSUME/REVOKE/EXPIRE 按原键作用于收件人条目。
+    /// 同 operationId 同载荷重放返回原结果；异载荷 409；businessVersion ≤ 当前 422；
+    /// REVOKE/EXPIRE 允许在 send 到达前按原键暂存（deferred），迟到的 send 受理即套用终态且不生成有效通知。</summary>
+    [HttpPost("send/{requestId}/recipients/{subscriberId}/lifecycle")]
+    public async Task<IActionResult> ApplyLifecycle(
+        string requestId,
+        string subscriberId,
+        [FromBody] LifecycleRequest? body,
+        CancellationToken ct)
+    {
+        var source = GetSourceSystem();
+        if (source.Result is not null) return source.Result;
+        var sourceSystem = source.Name!;
+
+        if (string.IsNullOrWhiteSpace(subscriberId))
+        {
+            return BadRequest(new { error = "subscriberId is required." });
+        }
+        if (body is null || string.IsNullOrWhiteSpace(body.OperationId) || body.OperationId.Length > 128)
+        {
+            return BadRequest(new
+            {
+                error = "operationId is required (max 128 characters)."
+            });
+        }
+        if (!LifecycleActions.Contains(body.Action))
+        {
+            return BadRequest(new
+            {
+                error = "action must be one of: CONSUME, REVOKE, EXPIRE."
+            });
+        }
+        if (body.BusinessVersion < 1)
+        {
+            return BadRequest(new { error = "businessVersion must be a positive integer." });
+        }
+        if (body.Reason?.Length > 2000)
+        {
+            return BadRequest(new { error = "reason must be at most 2000 characters." });
+        }
+
+        LifecycleApplyResult result;
+        try
+        {
+            result = await _lifecycle.ApplyAsync(
+                new LifecycleApplyInput(
+                    sourceSystem,
+                    requestId,
+                    subscriberId,
+                    body.OperationId,
+                    body.Action,
+                    body.BusinessVersion,
+                    body.Reason,
+                    body.OccurredAt),
+                ct);
+        }
+        catch (MessageLifecycleConflictException ex)
+        {
+            return Conflict(new { error = ex.Message, operationId = body.OperationId });
+        }
+        catch (MessageLifecycleNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (MessageLifecycleVersionRejectException ex)
+        {
+            return UnprocessableEntity(new
+            {
+                error = ex.Message,
+                attemptedVersion = ex.AttemptedVersion,
+                currentVersion = ex.CurrentVersion
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { code = "MESSAGE_CONCURRENT_UPDATE", error = "State changed; retry the original lifecycle operation." });
+        }
+
+        // 终态与持久任务已共同提交；请求不等待外部渠道，失败由Worker按原键继续补偿。
+        var external = result.SendId is null ? null
+            : await _lifecycle.GetExternalSyncAsync(result.SendId, result.BusinessVersion, ct);
+
+        return Accepted(new LifecycleResponse
+        {
+            OperationId = result.OperationId,
+            RequestId = result.RequestId,
+            SubscriberId = result.SubscriberId,
+            Action = result.Action,
+            BusinessVersion = result.BusinessVersion,
+            Status = result.Replayed ? "replayed" : result.ApplyStatus,
+            BusinessState = result.ResultBusinessState,
+            SendId = result.SendId,
+            OccurredAt = result.OccurredAt,
+            RecordedAt = result.RecordedAt,
+            ExternalState = ExternalState(result.ApplyStatus, result.SendId, external)
+        });
+    }
+
+    /// <summary>生命周期操作回读：同来源令牌按 requestId + operationId 查询操作记录。</summary>
+    [HttpGet("send/{requestId}/operations/{operationId}")]
+    public async Task<IActionResult> GetLifecycleOperation(
+        string requestId,
+        string operationId,
+        CancellationToken ct)
+    {
+        var source = GetSourceSystem();
+        if (source.Result is not null) return source.Result;
+
+        var operation = await _lifecycle.GetOperationAsync(
+            source.Name!, requestId, operationId, ct);
+        var external = operation?.SendId is null ? null
+            : await _lifecycle.GetExternalSyncAsync(operation.SendId, operation.BusinessVersion, ct);
+        return operation is null
+            ? NotFound()
+            : Ok(new LifecycleOperationResponse
+            {
+                OperationId = operation.OperationId,
+                RequestId = operation.RequestId,
+                SubscriberId = operation.SubscriberId,
+                SendId = operation.SendId,
+                Action = operation.Action,
+                BusinessVersion = operation.BusinessVersion,
+                Reason = operation.Reason,
+                ApplyStatus = operation.ApplyStatus,
+                ResultBusinessState = operation.ResultBusinessState,
+                OccurredAt = operation.OccurredAt,
+                RecordedAt = operation.RecordedAt,
+                AppliedAt = operation.AppliedAt,
+                ExternalState = ExternalState(operation.ApplyStatus, operation.SendId, external),
+                LastExternalConfirmedAt = external?.LastConfirmedAt,
+                ExternalError = external?.LastError
+            });
     }
 
     [HttpGet("my")]
@@ -239,6 +431,10 @@ public sealed class MessageCenterController : ControllerBase
         var username = User.FindFirstValue("preferred_username");
         return string.IsNullOrWhiteSpace(username) ? null : username;
     }
+
+    private static string ExternalState(string applyStatus, string? sendId, MessageTerminalSyncEntity? sync)
+        => applyStatus == MessageLifecycleApplyStatus.Superseded ? "superseded"
+            : sync?.State ?? (sendId is null ? "waiting-for-send" : "not-tracked");
 
     private (string? Name, IActionResult? Result) GetSourceSystem()
     {

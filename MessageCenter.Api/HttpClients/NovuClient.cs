@@ -37,8 +37,27 @@ public class NovuClient
             Content = JsonContent.Create(body, options: JsonOptions)
         };
         request.Headers.TryAddWithoutValidation("Idempotency-Key", transactionId);
-        var response = await _http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, ct);
+        }
+        catch (Exception ex) when (TriggerOutcomeMayBeUnknown(ex, ct))
+        {
+            // 请求可能已到达 Novu（超时/连接中断/5xx）：结果不确定，由调用方按严格策略处置，不得自动重发。
+            throw new NovuTriggerUncertainException(
+                $"Novu trigger outcome is uncertain for transaction '{transactionId}'.", ex);
+        }
+
+        try
+        {
+            response.EnsureSuccessStatusCode();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is >= HttpStatusCode.InternalServerError)
+        {
+            throw new NovuTriggerUncertainException(
+                $"Novu returned {ex.StatusCode} for transaction '{transactionId}'; the event may still have been recorded.", ex);
+        }
 
         var envelope = await response.Content.ReadFromJsonAsync<NovuEnvelope<TriggerResult>>(
             JsonOptions,
@@ -47,11 +66,17 @@ public class NovuClient
         var result = envelope?.Data ?? throw new InvalidOperationException("Empty trigger response from Novu.");
         if (!string.Equals(result.TransactionId, transactionId, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Novu trigger transaction mismatch.");
+            // 2xx 已返回但回执事务不符：Novu 可能已处理该事件，结果同样不确定。
+            throw new NovuTriggerReceiptMismatchException("Novu trigger transaction mismatch.");
         }
 
         return result;
     }
+
+    private static bool TriggerOutcomeMayBeUnknown(Exception ex, CancellationToken ct)
+        => !ct.IsCancellationRequested
+           && (ex is TaskCanceledException
+               || (ex is HttpRequestException { StatusCode: null or >= HttpStatusCode.InternalServerError }));
 
     public async Task<FeedResult> GetFeedAsync(
         int page,
@@ -105,6 +130,15 @@ public class NovuClient
 
         var url = $"/v1/subscribers/{Uri.EscapeDataString(subscriberId)}/messages/mark-as";
         var response = await _http.PostAsJsonAsync(url, body, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>按 Novu messageId 删除 in_app 消息（撤回/过期的 Novu 侧收敛）。
+    /// 404 视为已收敛（此前已删除或从未可见），不视为错误。</summary>
+    public async Task DeleteMessageAsync(string messageId, CancellationToken ct = default)
+    {
+        var response = await _http.DeleteAsync($"/v1/messages/{Uri.EscapeDataString(messageId)}", ct);
+        if (response.StatusCode == HttpStatusCode.NotFound) return;
         response.EnsureSuccessStatusCode();
     }
 

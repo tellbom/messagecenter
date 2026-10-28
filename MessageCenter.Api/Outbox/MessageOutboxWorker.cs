@@ -14,6 +14,7 @@ public sealed class MessageOutboxWorker : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly MessageWorkerOptions _options;
+    private readonly NovuOptions _novuOptions;
     private readonly ILogger<MessageOutboxWorker> _logger;
     private readonly string _worker =
         $"{Environment.MachineName}-{Environment.ProcessId}-{Guid.NewGuid():N}";
@@ -21,10 +22,12 @@ public sealed class MessageOutboxWorker : BackgroundService
     public MessageOutboxWorker(
         IServiceScopeFactory scopeFactory,
         IOptions<MessageWorkerOptions> options,
+        IOptions<NovuOptions> novuOptions,
         ILogger<MessageOutboxWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
+        _novuOptions = novuOptions.Value;
         _logger = logger;
     }
 
@@ -100,6 +103,15 @@ public sealed class MessageOutboxWorker : BackgroundService
         {
             var payload = DeserializePayload(item);
             var novu = services.GetRequiredService<NovuClient>();
+            if (!await store.MarkTriggerAttemptAsync(item.SendId, _worker, ct))
+            {
+                // 受理与认领之间套用了业务终态（撤回/过期/消费先行到达）：抑制本次触发，保留受理审计。
+                _logger.LogInformation(
+                    "Message suppressed by business terminal state. SendId={SendId} BusinessState={BusinessState}",
+                    item.SendId,
+                    item.BusinessState);
+                return;
+            }
             var result = await novu.TriggerAsync(
                 item.WorkflowId,
                 item.SubscriberId,
@@ -121,6 +133,33 @@ public sealed class MessageOutboxWorker : BackgroundService
                 item.SendId,
                 item.SubscriberId,
                 result.TransactionId);
+        }
+        // 严格来源：触发结果不确定（请求可能已被 Novu 受理）→ 冻结 uncertain，不自动重发同键请求，
+        // 等待原操作查询或人工对账（POST /send/{requestId}/resolve-trigger）收敛。
+        catch (NovuTriggerUncertainException ex) when (
+            !ct.IsCancellationRequested && _novuOptions.IsStrictTriggerSource(item.SourceSystem))
+        {
+            await store.MarkTriggerUncertainAsync(item.SendId, _worker, ex.Message, ct);
+            _logger.LogError(
+                ex,
+                "Trigger outcome uncertain. SendId={SendId} frozen as uncertain; manual reconciliation required.",
+                item.SendId);
+        }
+        catch (NovuTriggerReceiptMismatchException ex) when (
+            !ct.IsCancellationRequested && _novuOptions.IsStrictTriggerSource(item.SourceSystem))
+        {
+            await store.MarkTriggerUncertainAsync(item.SendId, _worker, ex.Message, ct);
+            _logger.LogError(
+                ex,
+                "Trigger receipt mismatch on strict source. SendId={SendId} frozen as uncertain.",
+                item.SendId);
+        }
+        catch (Exception ex) when (
+            !ct.IsCancellationRequested && _novuOptions.IsStrictTriggerSource(item.SourceSystem))
+        {
+            // 包括成功响应解析/入账失败：可能已到达Novu，不能退回pending自动重发。
+            await store.MarkTriggerUncertainAsync(item.SendId, _worker, ex.Message, ct);
+            _logger.LogError(ex, "Strict trigger remains uncertain. SendId={SendId}", item.SendId);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
@@ -160,6 +199,37 @@ public sealed class MessageOutboxWorker : BackgroundService
                     DateTime.UtcNow.AddSeconds(_options.OutboxVisibilityRetrySeconds),
                     "Novu accepted the trigger, but the in-app message is not visible yet.",
                     ct);
+                return;
+            }
+
+            // 可见性补投前的终态拦截（T-INT-01 §6）：终态在本行 accepted 与可见之间到达时，
+            // 不得把消息投进收件箱——按未送达处理：删除 Novu 侧消息并抑制本行。
+            if (await store.TrySuppressTerminalAsync(item.SendId, _worker, ct))
+            {
+                if (!string.IsNullOrEmpty(message.Id))
+                {
+                    try
+                    {
+                        await novu.DeleteMessageAsync(message.Id, ct);
+                        var projectionNow = services.GetRequiredService<MessageProjectionStore>();
+                        await projectionNow.RemoveAsync(item.SubscriberId, message.Id);
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Terminal message delete failed during visibility pass (row already suppressed). " +
+                            "SendId={SendId} MessageId={MessageId}",
+                            item.SendId,
+                            message.Id);
+                    }
+                }
+
+                _logger.LogInformation(
+                    "Message suppressed by business terminal state before visibility. " +
+                    "SendId={SendId} BusinessState={BusinessState}",
+                    item.SendId,
+                    item.BusinessState);
                 return;
             }
 
